@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import argparse
 from pydrake.examples import PendulumPlant
 from pydrake.all import (
     FittedValueIteration, 
@@ -9,7 +10,7 @@ from pydrake.all import (
     DynamicProgrammingOptions
 )
 
-def run_complete_experiment(cost_mode="min_time"):
+def run_complete_experiment(cost_mode):
     # 1. 求解阶段
     temp_builder = DiagramBuilder()
     temp_plant = temp_builder.AddSystem(PendulumPlant())
@@ -20,20 +21,21 @@ def run_complete_experiment(cost_mode="min_time"):
     
     print(f"正在计算 [{cost_mode}] 策略...")
     
-    # 定义代价函数
-    def min_time_cost(context):
+    # 根据传入的 cost_mode 动态定义代价函数
+    def cost_function(context):
         x = context.get_continuous_state_vector().CopyToVector()
         u = temp_plant.get_input_port().Eval(context)[0]
         theta_error = np.abs(np.mod(x[0] - np.pi + np.pi, 2 * np.pi) - np.pi)
-        # 如果不在目标邻域（误差 < 0.1），则代价为 1.0 (计时)
-        if theta_error < 0.1 and np.abs(x[1]) < 0.1:
-            return 0.0
-        return 1.0
+        
+        if cost_mode == "quadratic":
+            return theta_error**2 + 0.1 * x[1]**2 + 0.1 * u**2
+        else: # min_time
+            return 0.0 if (theta_error < 0.1 and np.abs(x[1]) < 0.1) else 1.0
 
     options = DynamicProgrammingOptions()
     policy, _ = FittedValueIteration(
         Simulator(temp_plant), 
-        min_time_cost,
+        cost_function,
         [theta_grid, thetadot_grid], [input_grid], 0.01, options
     )
 
@@ -63,12 +65,10 @@ def run_complete_experiment(cost_mode="min_time"):
         log = loggers[i].FindLog(context)
         th = log.data()[0, :]
         thd = log.data()[1, :]
-        t = log.sample_times()
         
-        # 计算调节时间
         err = np.abs(np.mod(th - np.pi + np.pi, 2 * np.pi) - np.pi)
         idx = np.where(err > 0.1)[0]
-        ts = t[idx[-1]] if len(idx) > 0 else 0.0
+        ts = log.sample_times()[idx[-1]] if len(idx) > 0 else 0.0
         print(f"起点 {x0} | 调节时间: {ts:.2f}s")
         
         plt.plot(th, thd, color=colors[i], label=f"Start {x0}", linewidth=2)
@@ -80,10 +80,16 @@ def run_complete_experiment(cost_mode="min_time"):
     plt.legend(loc='best')
     plt.grid(True, alpha=0.3)
     
-    # 注意这里保存文件名的变化
-    plt.savefig(f"phase_portrait_{cost_mode}.png")
-    print(f"\n图像已保存为: phase_portrait_{cost_mode}.png")
-    plt.show()
+    # 动态文件名
+    filename = f"phase_portrait_{cost_mode}.png"
+    plt.savefig(filename)
+    print(f"\n图像已保存为: {filename}")
 
 if __name__ == "__main__":
-    run_complete_experiment(cost_mode="min_time")
+    parser = argparse.ArgumentParser(description="倒立摆基准测试")
+    parser.add_argument('--mode', type=str, required=True, 
+                        choices=['quadratic', 'min_time'], 
+                        help='选择测试模式: quadratic 或 min_time')
+    args = parser.parse_args()
+    
+    run_complete_experiment(cost_mode=args.mode)

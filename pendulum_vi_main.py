@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
+import argparse
 from pydrake.examples import PendulumPlant
 from pydrake.all import (
     FittedValueIteration, 
@@ -53,7 +54,6 @@ def run_value_iteration(cost_type="quadratic"):
 
     # 5. 构建闭环系统
     builder.AddSystem(policy)
-    # 核心修复：不但要控制输出连输入，还要把 plant 的输出连回 policy 的输入
     builder.Connect(policy.get_output_port(), plant.get_input_port())
     builder.Connect(plant.get_state_output_port(), policy.get_input_port())
     
@@ -70,44 +70,50 @@ def run_value_iteration(cost_type="quadratic"):
     log = logger.FindLog(sim_context)
     return log, cost_to_go, np.linspace(0, 2 * np.pi, res), np.linspace(-10, 10, res)
 
-# 执行实验
-try:
-    cost_mode = "min_time" 
-    log, J_star, th_g, thd_g = run_value_iteration(cost_type=cost_mode)
+if __name__ == "__main__":
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description="倒立摆价值迭代仿真")
+    parser.add_argument('--mode', type=str, default='quadratic', 
+                        choices=['quadratic', 'min_time'], 
+                        help='选择控制模式: quadratic 或 min_time')
+    args = parser.parse_args()
 
-    file_suffix = f"_{cost_mode}"
-    
-    # --- 绘图 1: 状态响应曲线 ---
-    plt.figure(figsize=(10, 5))
-    times = log.sample_times()
-    data = log.data()
-    plt.plot(times, data[0, :], label='Angle (theta)')
-    plt.plot(times, data[1, :], label='Angular Velocity', alpha=0.7)
-    plt.axhline(y=np.pi, color='r', linestyle='--', label='Target (pi)')
-    plt.title(f"Swing-up Result ({cost_mode})")
-    plt.xlabel("Time (s)")
-    plt.ylabel("State Value")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(f"state_response{file_suffix}.png")
-    print(f"响应曲线已生成: state_response{file_suffix}.png")
+    try:
+        # 使用命令行参数运行
+        log, J_star, th_g, thd_g = run_value_iteration(cost_type=args.mode)
 
-    # --- 绘图 2: 3D 价值地形图 ---
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(th_g, thd_g)
-    # 适配矩阵形状
-    Z = J_star.flatten().reshape(len(th_g), len(thd_g)).T
-    surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
-    ax.set_title(f"Optimal Cost-to-Go Landscape ({cost_mode})")
-    ax.set_xlabel("Theta")
-    ax.set_ylabel("Theta_dot")
-    fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
-    plt.savefig(f"cost_3d{file_suffix}.png")
-    print(f"3D地形图已生成: cost_3d{file_suffix}.png")
+        file_suffix = f"_{args.mode}"
+        
+        # --- 绘图 1: 状态响应曲线 ---
+        plt.figure(figsize=(10, 5))
+        times = log.sample_times()
+        data = log.data()
+        plt.plot(times, data[0, :], label='Angle (theta)')
+        plt.plot(times, data[1, :], label='Angular Velocity', alpha=0.7)
+        plt.axhline(y=np.pi, color='r', linestyle='--', label='Target (pi)')
+        plt.title(f"Swing-up Result ({args.mode})")
+        plt.xlabel("Time (s)")
+        plt.ylabel("State Value")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f"state_response{file_suffix}.png")
+        print(f"响应曲线已生成: state_response{file_suffix}.png")
 
-    print("\n实验全部成功！请在左侧下载图片。")
+        # --- 绘图 2: 3D 价值地形图 ---
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        X, Y = np.meshgrid(th_g, thd_g)
+        Z = J_star.flatten().reshape(len(th_g), len(thd_g)).T
+        surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
+        ax.set_title(f"Optimal Cost-to-Go Landscape ({args.mode})")
+        ax.set_xlabel("Theta")
+        ax.set_ylabel("Theta_dot")
+        fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
+        plt.savefig(f"cost_3d{file_suffix}.png")
+        print(f"3D地形图已生成: cost_3d{file_suffix}.png")
 
-except Exception as e:
-    import traceback
-    traceback.print_exc()
+        print(f"\n[{args.mode}] 模式实验全部成功！")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
